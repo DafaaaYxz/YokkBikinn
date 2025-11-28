@@ -1,8 +1,21 @@
 import { GoogleGenAI } from "@google/genai";
 import { Message } from '../types';
 
-const apiKey = process.env.API_KEY || ''; // In production, this comes from env
+// Safely retrieve API Key to prevent "process is not defined" errors in browser
+const getApiKey = (): string => {
+  try {
+    // Check if process.env exists (Node.js/Bundled environment)
+    if (typeof process !== 'undefined' && process.env?.API_KEY) {
+      return process.env.API_KEY;
+    }
+  } catch (e) {
+    // Ignore error
+  }
+  // Fallback to the key provided by the user for this specific implementation
+  return 'AIzaSyBywyuARVnFRcSMDerQJ2PZ_DZWHt5XaxA';
+};
 
+const apiKey = getApiKey();
 const ai = new GoogleGenAI({ apiKey });
 
 export const streamGeminiResponse = async (
@@ -12,23 +25,25 @@ export const streamGeminiResponse = async (
   onChunk: (text: string) => void
 ): Promise<string> => {
   try {
-    // We map our Message type to the API's Content format
-    // Filter out empty messages to prevent API errors
-    const validHistory = history.filter(h => h.text.trim() !== '');
+    // Map history to API format
+    // Filter out empty messages and ensure role is valid
+    const validHistory = history
+      .filter(h => h.text.trim() !== '')
+      .map(msg => ({
+        role: msg.role === 'model' ? 'model' : 'user',
+        parts: [{ text: msg.text }],
+      }));
 
-    // We use gemini-2.0-flash as requested by user (or fallback to latest flash)
+    // Use gemini-2.0-flash as requested
     const modelId = 'gemini-2.0-flash'; 
 
     const chat = ai.chats.create({
       model: modelId,
       config: {
-        systemInstruction: persona,
+        systemInstruction: persona, // This sets the "Persona"
         temperature: 0.7,
       },
-      history: validHistory.map(msg => ({
-        role: msg.role,
-        parts: [{ text: msg.text }],
-      })),
+      history: validHistory,
     });
 
     const result = await chat.sendMessageStream({ message: newMessage });
